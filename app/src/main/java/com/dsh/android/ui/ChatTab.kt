@@ -52,7 +52,9 @@ import com.dsh.android.node.NodeService
 fun ChatTab(nodeState: NodeState) {
     when (nodeState.status) {
         Status.RUNNING -> ChatWebView(url = nodeState.url)
-        Status.IDLE, Status.PREPARING, Status.INSTALLING, Status.STARTING ->
+        Status.PREPARING, Status.INSTALLING, Status.STARTING ->
+            StatusPanel(nodeState, showActions = true)
+        Status.IDLE ->
             StatusPanel(nodeState)
         Status.STOPPED, Status.ERROR ->
             StatusPanel(nodeState, showActions = true)
@@ -135,19 +137,38 @@ private fun StatusPanel(nodeState: NodeState, showActions: Boolean = false) {
         Spacer(Modifier.height(24.dp))
         Row {
             if (showActions) {
-                Button(onClick = {
-                    NodeService.start(context)
-                    NodeManager.startServer()
-                }) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("重新启动")
-                }
-                Spacer(Modifier.width(12.dp))
-                OutlinedButton(onClick = { NodeManager.stopServer() }) {
-                    Icon(Icons.Filled.Stop, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("停止")
+                val installing = nodeState.status == Status.INSTALLING ||
+                    nodeState.status == Status.PREPARING ||
+                    nodeState.status == Status.STARTING
+                if (installing) {
+                    // During install/start, only offer to cancel (kills npm/child).
+                    OutlinedButton(onClick = { NodeManager.stopServer() }) {
+                        Icon(Icons.Filled.Stop, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("取消")
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "也可下拉通知栏点「停止」",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.CenterVertically),
+                    )
+                } else {
+                    Button(onClick = {
+                        NodeService.start(context)
+                        NodeManager.startServer()
+                    }) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("重新启动")
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    OutlinedButton(onClick = { NodeManager.stopServer() }) {
+                        Icon(Icons.Filled.Stop, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("停止")
+                    }
                 }
             }
         }

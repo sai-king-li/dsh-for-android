@@ -151,39 +151,141 @@ async function writeRuntimePackageJson(version) {
   writeFileSync(join(RUNTIME_DIR, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
 }
 
+/**
+ * npm install with live progress and self-healing:
+ *  - streams npm's output as log events (UI never looks frozen),
+ *  - heartbeat every 15s with elapsed time,
+ *  - stall watchdog: if npm produces no output for STALL_MS, kill it and retry
+ *    (phone networks can stall a TCP connection mid-download indefinitely),
+ *  - fast registry by default (npmmirror for CN networks; fallback on last try).
+ */
+const STALL_MS = 120000;
+const MAX_INSTALL_ATTEMPTS = 5;
+
 async function npmInstall() {
   mkdirSync(RUNTIME_DIR, { recursive: true });
-  log("info", `installing @deepseek-ai/dsh@${DSHD_VERSION} (this can take a few minutes on first launch)`);
-  progress("installing", 5);
-  // The bundled npm CLI lives inside the extracted Node runtime tree.
-  const bundledNpmCli = join(FILES, "node", "lib", "node_modules", "npm", "bin", "npm-cli.js");
-  let npmCommand = NODE_BIN;
-  let npmArgs = [bundledNpmCli, "install", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error"];
-  if (!existsSync(bundledNpmCli)) {
-    // Dev fallback: use the platform npm directly.
-    npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-    npmArgs = ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error"];
+  const primaryRegistry = process.env.DSH_NPM_REGISTRY ?? "https://registry.npmmirror.com";
+  const fallbackRegistry = primaryRegistry.includes("npmmirror") ? "https://registry.npmjs.org" : primaryRegistry;
+
+  for (let attempt = 1; attempt <= MAX_INSTALL_ATTEMPTS; attempt++) {
+    const registry = attempt === MAX_INSTALL_ATTEMPTS ? fallbackRegistry : primaryRegistry;
+    if (attempt > 1) {
+      log("info", `下载似乎停滞,正在自动重试(第 ${attempt}/${MAX_INSTALL_ATTEMPTS} 次,registry: ${registry})…`);
+      progress("installing", 5 + attempt * 5);
+    } else {
+      log("info", `installing @deepseek-ai/dsh@${DSHD_VERSION} (registry: ${registry}) — 首次安装需几分钟,请保持联网`);
+      progress("installing", 5);
+    }
+    const result = await runNpmAttempt(registry, attempt);
+    if (result === "ok") {
+      progress("installing", 70);
+      log("info", "npm install finished");
+      return;
+    }
+    if (result === "fail") {
+      // Real npm failure (not a stall): report it and stop.
+      process.exit(3);
+    }
+    // "stalled": watchdog killed npm; loop retries (npm's cache resumes
+    // already-downloaded tarballs, so later attempts get further).
   }
-  const result = await run(npmCommand, npmArgs, {
-    cwd: RUNTIME_DIR,
-    // IMPORTANT: `env` replaces the whole environment — merge process.env so
-    // the child keeps LD_LIBRARY_PATH / OPENSSL_CONF / PATH etc.
-    env: {
-      ...process.env,
-      npm_config_cache: NPM_CACHE,
-      npm_config_ignore_scripts: "true",
-      npm_config_audit: "false",
-      npm_config_fund: "false",
-    },
+  error(`安装失败:网络不稳定(连续 ${MAX_INSTALL_ATTEMPTS} 次下载停滞)。请检查网络(建议切换到更稳定的 Wi-Fi/流量)后点击「重新启动」重试。`);
+  process.exit(3);
+}
+
+/** Runs one npm install attempt; resolves "ok" | "fail" | "stalled". */
+function runNpmAttempt(registry, attempt) {
+  return new Promise((resolvePromise) => {
+    // The bundled npm CLI lives inside the extracted Node runtime tree.
+    const bundledNpmCli = join(FILES, "node", "lib", "node_modules", "npm", "bin", "npm-cli.js");
+    let npmCommand = NODE_BIN;
+    let npmArgs = [bundledNpmCli, "install", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=http"];
+    if (!existsSync(bundledNpmCli)) {
+      // Dev fallback: use the platform npm directly.
+      npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+      npmArgs = ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=http"];
+    }
+    const child = spawn(npmCommand, npmArgs, {
+      cwd: RUNTIME_DIR,
+      // IMPORTANT: `env` replaces the whole environment — merge process.env so
+      // the child keeps LD_LIBRARY_PATH / OPENSSL_CONF / PATH etc.
+      env: {
+        ...process.env,
+        npm_config_cache: NPM_CACHE,
+        npm_config_ignore_scripts: "true",
+        npm_config_audit: "false",
+        npm_config_fund: "false",
+        npm_config_registry: registry,
+        npm_config_fetch_timeout: "90000",
+        npm_config_fetch_retries: "2",
+        // Lower parallel-connection count: some phone networks / routers stall
+        // when npm opens many simultaneous tarball downloads.
+        npm_config_network_concurrency: "4",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const startedAt = Date.now();
+    let lastActivity = Date.now();
+    const heartbeat = setInterval(() => {
+      const secs = Math.floor((Date.now() - startedAt) / 1000);
+      log("info", `安装仍在进行中(已用时 ${Math.floor(secs / 60)} 分 ${secs % 60} 秒),请保持联网…`);
+    }, 15000);
+
+    // Stall watchdog: npm can hang forever on a stalled TCP connection. If no
+    // output for STALL_MS, kill this attempt so we can retry.
+    let stalled = false;
+    const stallWatch = setInterval(() => {
+      if (Date.now() - lastActivity > STALL_MS) {
+        stalled = true;
+        log("warn", `npm 已 ${Math.round(STALL_MS / 1000)} 秒无输出,判定网络停滞,终止本次尝试`);
+        runCatching(() => child.kill("SIGKILL"));
+      }
+    }, 15000);
+
+    let out = "";
+    let err = "";
+    let forwarded = 0;
+    const onData = (chunk, isErr) => {
+      lastActivity = Date.now();
+      const text = chunk.toString();
+      if (isErr) err += text;
+      else out += text;
+      for (const raw of text.split("\n")) {
+        const line = raw.trim();
+        if (!line) continue;
+        forwarded++;
+        if (forwarded % 3 === 0 || /added|up to date|error|warn|http fetch (GET|POST)/i.test(line)) {
+          log("info", "npm: " + line.slice(0, 220));
+        }
+      }
+    };
+    child.stdout.on("data", (d) => onData(d, false));
+    child.stderr.on("data", (d) => onData(d, true));
+
+    child.on("close", (code) => {
+      clearInterval(heartbeat);
+      clearInterval(stallWatch);
+      if (stalled) {
+        resolvePromise("stalled");
+        return;
+      }
+      if (code !== 0) {
+        const tail = (err || out).split("\n").filter(Boolean).slice(-15).join("\n");
+        error(`npm install failed (exit ${code}):\n${tail}`);
+        resolvePromise("fail");
+        return;
+      }
+      progress("installing", 60);
+      resolvePromise("ok");
+    });
   });
-  progress("installing", 60);
-  if (result.code !== 0) {
-    const tail = (result.err || result.out).split("\n").filter(Boolean).slice(-12).join("\n");
-    error(`npm install failed (exit ${result.code}):\n${tail}`);
-    process.exit(3);
-  }
-  log("info", "npm install finished");
-  progress("installing", 70);
+}
+
+function runCatching(fn) {
+  try {
+    fn();
+  } catch { /* non-fatal */ }
 }
 
 function writeSharpStub() {

@@ -1,4 +1,4 @@
-# Gradle
+﻿# Gradle
 .gradle/
 build/
 local.properties
@@ -23,7 +23,7 @@ app/src/main/jniLibs/
 
 # Test scratch dirs
 _boottest/
-_btest2/
-_btest3/
+_btest*/
+_btest*/
 _research/
 _res/
