@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Static fallback icon for API < 26 devices (minSdk 28, kept for tooling) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#0B1220"
+        android:pathData="M0,0 h48 v48 h-48 z" />
+    <path
+        android:fillColor="#4FC3F7"
+        android:pathData="M18,14 L26,24 L18,34 L15.5,31 L21,24 L15.5,17 Z" />
+    <path
+        android:fillColor="#4FC3F7"
+        android:pathData="M15.5,36 L32.5,36 L32.5,38.5 L15.5,38.5 Z" />
+</vector>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foreground of the adaptive launcher icon: a terminal prompt glyph ">_" -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Prompt chevron ">" -->
+    <path
+        android:fillColor="#4FC3F7"
+        android:pathData="M42,38 L56,54 L42,70 L37,65 L46,54 L37,43 Z" />
+    <!-- Prompt underline "_" -->
+    <path
+        android:fillColor="#4FC3F7"
+        android:pathData="M37,74 L64,74 L64,79 L37,79 Z" />
+</vector>

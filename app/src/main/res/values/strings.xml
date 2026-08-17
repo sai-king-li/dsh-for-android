@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dsh for Android</string>
+    <string name="app_name_short">Dsh</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel_server">dsh 服务</string>
+    <string name="notif_server_title">dsh 正在运行</string>
+    <string name="notif_server_text">DeepSeek Harness 已在后台启动</string>
+    <string name="notif_server_action_stop">停止</string>
+
+    <!-- Common -->
+    <string name="action_retry">重试</string>
+    <string name="action_ok">好的</string>
+    <string name="action_cancel">取消</string>
+</resources>

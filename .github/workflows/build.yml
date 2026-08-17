@@ -1,0 +1,50 @@
+# Builds the debug APK on push/PR and uploads it as an artifact.
+#
+# Requires: the node runtime is fetched from the Termux repository by
+# scripts/fetch-node-runtime.ps1 (needs `node` on PATH — preinstalled on
+# GitHub's windows runners) and the Android SDK is installed by
+# scripts/setup-android-sdk.ps1.
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Fetch Android Node.js runtime (arm64)
+        shell: pwsh
+        run: |
+          .\scripts\fetch-node-runtime.ps1 -Arch arm64
+
+      - name: Install Android SDK
+        shell: pwsh
+        run: |
+          .\scripts\setup-android-sdk.ps1
+
+      - name: Build debug APK
+        shell: pwsh
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+        run: |
+          $env:ANDROID_HOME = "$pwd\.android-sdk"
+          $env:ANDROID_SDK_ROOT = "$pwd\.android-sdk"
+          .\gradlew.bat assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
