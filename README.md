@@ -132,6 +132,11 @@ adb shell am start -n com.dsh.android/.MainActivity
 - API Key 仅保存在本机（DataStore + 注入 `DEEPSEEK_API_KEY`），不上传第三方。
 - 遥测默认关闭（`DSH_TELEMETRY_MODE=DISABLED`）。
 
+## 许可证
+
+本应用源码以 [MIT](./LICENSE) 许可发布；随 APK 分发的第三方组件（Node.js、npm、
+`@deepseek-ai/dsh`、node-pty 安卓分支）版权归各自作者，详见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
+
 ## 已知限制
 
 - 图片附件处理不可用（sharp 无安卓构建）。
